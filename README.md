@@ -9,7 +9,7 @@ This CLI-tool allows you to download all footage from your Unifi-Protect NVR. It
 Alternatively, you can also use Docker to run the tool without installing Rust: `docker run -it unifiprotect/unifi-protect-bulk-download download`
 
 # Usage
-`unifi_protect_bulk_download download <uri> <username> <password> <path> <mode> <recording_type> <start_date> <end_date>`
+`unifi_protect_bulk_download download <uri> <username> <password> <path> <mode> <recording_type> <start_date> <end_date> [cameras]`
 
 Arguments:
 - \<uri>             The uri of the unifi protect server
@@ -20,6 +20,7 @@ Arguments:
 - \<recording_type>  The type of recording to download (rotating or timelapse) [possible values: rotating, timelapse]
 - \<start_date>      The start date/time to download files from (YYYY-MM-DD or YYYY-MM-DD-HH)
 - \<end_date>        The end date/time to download files to (YYYY-MM-DD or YYYY-MM-DD-HH)
+- \[cameras]         Optional comma-separated list of camera names or camera ids to download. Omit it, use `all`, or use `*` to download every camera.
 
 
 # Example
@@ -36,6 +37,11 @@ In the above example, replace:
 6. __rotating__ with __timelapse__ in case you want to download timelapse footage rather than real time recordings
 6. __2023-06-01__ (or for hourly precision __2023-06-01-08__) with the start date/time of the footage you want to download
 6. __2023-07-31__ (or for hourly precision __2023-07-31-18__) with the end date/time of the footage you want to download
+
+To download only selected cameras, append a comma-separated list of camera names or ids:
+```bash
+download https://<Unifi-Protect-IP-Addr> <username> <password> /path/to/destination/folder daily rotating 2023-06-01 2023-07-31 "Front Door,Garage"
+```
 
 To download only specific hours (for example daylight hours), specify the start and end date/time in the format __YYYY-MM-DD-HH__ (for example __2023-06-01-08__).
 

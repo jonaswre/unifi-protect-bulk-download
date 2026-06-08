@@ -142,12 +142,7 @@ async fn download(args: &DownloadArgs) -> Result<(), AppError> {
             time_frame.0, time_frame.1
         );
         for camera in server.cameras_simple.iter() {
-            // check if camera name or id is in the list of cameras to download but if list contains all or * then download all
-            if !cameras.contains(&camera.name)
-                && !cameras.contains(&camera.id)
-                && !cameras.contains(&"*".to_string())
-                && !cameras.contains(&"all".to_string())
-            {
+            if !should_download_camera(&camera.name, &camera.id, &cameras) {
                 continue;
             }
             let mut file_name = format!(
@@ -216,6 +211,32 @@ async fn download(args: &DownloadArgs) -> Result<(), AppError> {
     Ok(())
 }
 
+fn should_download_camera(
+    camera_name: &str,
+    camera_id: &str,
+    requested_cameras: &[String],
+) -> bool {
+    let mut has_filter = false;
+
+    for requested_camera in requested_cameras
+        .iter()
+        .map(|camera| camera.trim())
+        .filter(|camera| !camera.is_empty())
+    {
+        has_filter = true;
+
+        if requested_camera == "*"
+            || requested_camera.eq_ignore_ascii_case("all")
+            || requested_camera == camera_name
+            || requested_camera == camera_id
+        {
+            return true;
+        }
+    }
+
+    !has_filter
+}
+
 fn parse_date_or_hour(
     date_or_hour: &str,
     is_start: bool,
@@ -235,4 +256,55 @@ fn parse_date_or_hour(
         date.and_hms_opt(23, 59, 59)
     }
     .expect("hard-coded time should be valid"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_download_camera;
+
+    #[test]
+    fn selects_all_cameras_when_no_filter_is_provided() {
+        let requested_cameras = Vec::new();
+
+        assert!(should_download_camera(
+            "Front Door",
+            "camera-id-1",
+            &requested_cameras
+        ));
+    }
+
+    #[test]
+    fn selects_all_cameras_for_all_or_wildcard_filter() {
+        assert!(should_download_camera(
+            "Front Door",
+            "camera-id-1",
+            &[String::from("all")]
+        ));
+        assert!(should_download_camera(
+            "Front Door",
+            "camera-id-1",
+            &[String::from("*")]
+        ));
+    }
+
+    #[test]
+    fn selects_only_cameras_matching_requested_name_or_id() {
+        let requested_cameras = vec![String::from("Front Door"), String::from("camera-id-2")];
+
+        assert!(should_download_camera(
+            "Front Door",
+            "camera-id-1",
+            &requested_cameras
+        ));
+        assert!(should_download_camera(
+            "Back Yard",
+            "camera-id-2",
+            &requested_cameras
+        ));
+        assert!(!should_download_camera(
+            "Garage",
+            "camera-id-3",
+            &requested_cameras
+        ));
+    }
 }
