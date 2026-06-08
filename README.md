@@ -45,6 +45,23 @@ download https://<Unifi-Protect-IP-Addr> <username> <password> /path/to/destinat
 
 To download only specific hours (for example daylight hours), specify the start and end date/time in the format __YYYY-MM-DD-HH__ (for example __2023-06-01-08__).
 
+# CI/CD
+
+GitHub Actions runs formatting, clippy, tests, and Docker build validation on pushes and pull requests.
+
+To create release binaries for Linux, macOS, and Windows, push a version tag:
+
+```bash
+git tag v0.6.1
+git push fork v0.6.1
+```
+
+The release workflow builds:
+- `x86_64-unknown-linux-gnu`
+- `x86_64-apple-darwin`
+- `aarch64-apple-darwin`
+- `x86_64-pc-windows-msvc`
+
 ## GPL3 LICENSE SYNOPSIS
 TL;DR* Here's what the license entails:
 
