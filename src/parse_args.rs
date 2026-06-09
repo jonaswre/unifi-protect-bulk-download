@@ -45,7 +45,7 @@ pub struct DownloadArgs {
     /// Timelapse speed factor. Matches UniFi Protect UI options.
     #[arg(long, value_enum, default_value = "60x")]
     pub timelapse_factor: TimelapseFactor,
-    /// Target output duration for each timelapse export (e.g. 300s, 5m, 1h). Overrides --timelapse-factor.
+    /// Target total output duration across selected timelapse exports (e.g. 300s, 5m, 1h). Overrides --timelapse-factor.
     #[arg(long, value_name = "DURATION")]
     pub timelapse_duration: Option<String>,
     /// Overwrite existing output files instead of skipping them.

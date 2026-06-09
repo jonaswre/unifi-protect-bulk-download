@@ -81,19 +81,29 @@ async fn download(args: &DownloadArgs) -> Result<(), AppError> {
             ))
         })
         .collect::<Result<Vec<(DateTime<Local>, DateTime<Local>)>, AppError>>()?;
+    let timelapse_duration_fps = if matches!(args.recording_type, RecordingType::Timelapse) {
+        if let Some(duration_seconds) = timelapse_duration_seconds {
+            let naive_time_frames = time_frames
+                .iter()
+                .map(|(frame_start, frame_end)| {
+                    (frame_start.naive_local(), frame_end.naive_local())
+                })
+                .collect::<Vec<_>>();
+            Some(timelapse_fps_for_frames(
+                &naive_time_frames,
+                duration_seconds,
+            )?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     println!("Downloading videos...");
     for time_frame in time_frames {
         let timelapse_fps = if matches!(args.recording_type, RecordingType::Timelapse) {
-            if let Some(duration_seconds) = timelapse_duration_seconds {
-                Some(timelapse_fps_for_frame(
-                    time_frame.0.naive_local(),
-                    time_frame.1.naive_local(),
-                    duration_seconds,
-                )?)
-            } else {
-                Some(args.timelapse_factor.as_fps())
-            }
+            Some(timelapse_duration_fps.unwrap_or_else(|| args.timelapse_factor.as_fps()))
         } else {
             None
         };
@@ -330,26 +340,40 @@ fn parse_duration_seconds(input: &str) -> Result<u64, AppError> {
     }
 }
 
-fn timelapse_fps_for_frame(
-    frame_start: NaiveDateTime,
-    frame_end: NaiveDateTime,
+fn timelapse_fps_for_frames(
+    frames: &[(NaiveDateTime, NaiveDateTime)],
     target_duration_seconds: u64,
 ) -> Result<u32, AppError> {
-    let source_seconds = (frame_end - frame_start).num_seconds() + 1;
-    if source_seconds <= 0 {
-        return Err(AppError::InvalidDuration {
-            input: target_duration_seconds.to_string(),
-            reason: "time frame duration must be greater than zero".to_string(),
-        });
+    let mut total_source_seconds = 0_u64;
+    for (frame_start, frame_end) in frames {
+        let source_seconds = (*frame_end - *frame_start).num_seconds() + 1;
+        if source_seconds <= 0 {
+            return Err(AppError::InvalidDuration {
+                input: target_duration_seconds.to_string(),
+                reason: "time frame duration must be greater than zero".to_string(),
+            });
+        }
+        total_source_seconds = total_source_seconds
+            .checked_add(source_seconds as u64)
+            .ok_or_else(|| AppError::InvalidDuration {
+                input: target_duration_seconds.to_string(),
+                reason: "total time frame duration is too large".to_string(),
+            })?;
     }
 
+    timelapse_fps_for_source_seconds(total_source_seconds, target_duration_seconds)
+}
+
+fn timelapse_fps_for_source_seconds(
+    source_seconds: u64,
+    target_duration_seconds: u64,
+) -> Result<u32, AppError> {
     let denominator = target_duration_seconds
         .checked_mul(TIMELAPSE_SOURCE_FRAME_INTERVAL_SECONDS)
         .ok_or_else(|| AppError::InvalidDuration {
             input: target_duration_seconds.to_string(),
             reason: "target duration is too large".to_string(),
         })?;
-    let source_seconds = source_seconds as u64;
     let fps = source_seconds.div_ceil(denominator).max(1);
 
     u32::try_from(fps).map_err(|_| AppError::InvalidDuration {
@@ -413,7 +437,7 @@ fn parse_date_or_hour(
 mod tests {
     use super::{
         build_time_frames, parse_duration_seconds, parse_hour_window, should_download_camera,
-        should_skip_existing_file, timelapse_fps_for_frame, HourWindow,
+        should_skip_existing_file, timelapse_fps_for_frames, HourWindow,
     };
     use crate::parse_args::DownloadMode;
     use chrono::{NaiveDate, NaiveTime};
@@ -589,6 +613,21 @@ mod tests {
             .and_hms_opt(18, 59, 59)
             .unwrap();
 
-        assert_eq!(timelapse_fps_for_frame(start, end, 300).unwrap(), 10);
+        assert_eq!(timelapse_fps_for_frames(&[(start, end)], 300).unwrap(), 10);
+    }
+
+    #[test]
+    fn computes_timelapse_fps_for_overall_target_duration_across_frames() {
+        let frames = (0..10)
+            .map(|day_offset| {
+                let day = NaiveDate::from_ymd_opt(2026, 5, 5 + day_offset).unwrap();
+                (
+                    day.and_hms_opt(7, 0, 0).unwrap(),
+                    day.and_hms_opt(18, 59, 59).unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(timelapse_fps_for_frames(&frames, 300).unwrap(), 96);
     }
 }
