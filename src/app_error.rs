@@ -27,6 +27,10 @@ pub enum AppError {
         input: String,
         reason: String,
     },
+    InvalidDuration {
+        input: String,
+        reason: String,
+    },
     Api {
         context: String,
         source: String,
@@ -63,6 +67,9 @@ impl fmt::Display for AppError {
             AppError::InvalidMode { mode } => write!(f, "invalid download mode '{}'", mode),
             AppError::InvalidHourWindow { input, reason } => {
                 write!(f, "invalid hour window '{}': {}", input, reason)
+            }
+            AppError::InvalidDuration { input, reason } => {
+                write!(f, "invalid duration '{}': {}", input, reason)
             }
             AppError::Api { context, source } => write!(f, "{}: {}", context, source),
         }

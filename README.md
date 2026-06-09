@@ -25,6 +25,7 @@ Arguments:
 Options:
 - `--hours <START-END>` limits each day to an end-exclusive hour window, for example `--hours 07-19` downloads from 07:00 up to, but not including, 19:00 each day.
 - `--timelapse-factor <FACTOR>` sets the timelapse speed factor. Supported values are `60x`, `120x`, `300x`, and `600x`. The default is `60x`.
+- `--timelapse-duration <DURATION>` targets a fixed output duration for each timelapse export, for example `--timelapse-duration 5m`. Supported units are `s`, `m`, and `h`. This overrides `--timelapse-factor`.
 
 
 # Example
@@ -50,6 +51,11 @@ download https://<Unifi-Protect-IP-Addr> <username> <password> /path/to/destinat
 To download timelapse footage only during daytime hours each day:
 ```bash
 download https://<Unifi-Protect-IP-Addr> <username> <password> /path/to/destination/folder hourly timelapse 2023-06-01 2023-07-31 --hours 07-19 --timelapse-factor 300x "Front Door"
+```
+
+To target a five-minute timelapse export for each selected time frame:
+```bash
+download https://<Unifi-Protect-IP-Addr> <username> <password> /path/to/destination/folder daily timelapse 2023-06-01 2023-07-31 --hours 07-19 --timelapse-duration 5m "Front Door"
 ```
 
 To download only specific hours (for example daylight hours), specify the start and end date/time in the format __YYYY-MM-DD-HH__ (for example __2023-06-01-08__).
