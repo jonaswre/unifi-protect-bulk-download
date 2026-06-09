@@ -48,6 +48,9 @@ pub struct DownloadArgs {
     /// Target output duration for each timelapse export (e.g. 300s, 5m, 1h). Overrides --timelapse-factor.
     #[arg(long, value_name = "DURATION")]
     pub timelapse_duration: Option<String>,
+    /// Overwrite existing output files instead of skipping them.
+    #[arg(long)]
+    pub force: bool,
     /// Comma-separated list of camera names/ids, or `all` / `*`.
     #[arg(value_delimiter = ',')]
     pub cameras: Vec<String>,

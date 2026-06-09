@@ -126,8 +126,7 @@ async fn download(args: &DownloadArgs) -> Result<(), AppError> {
             let file_path_display = file_path.display().to_string();
             let file_path_lossy = file_path.to_string_lossy().to_string();
 
-            // check if file exists
-            if file_path.exists() {
+            if should_skip_existing_file(file_path.exists(), args.force) {
                 println!("File '{}' already exists, skipping...", file_path_display);
                 continue;
             }
@@ -385,6 +384,10 @@ fn should_download_camera(
     !has_filter
 }
 
+fn should_skip_existing_file(file_exists: bool, force: bool) -> bool {
+    file_exists && !force
+}
+
 fn parse_date_or_hour(
     date_or_hour: &str,
     is_start: bool,
@@ -410,7 +413,7 @@ fn parse_date_or_hour(
 mod tests {
     use super::{
         build_time_frames, parse_duration_seconds, parse_hour_window, should_download_camera,
-        timelapse_fps_for_frame, HourWindow,
+        should_skip_existing_file, timelapse_fps_for_frame, HourWindow,
     };
     use crate::parse_args::DownloadMode;
     use chrono::{NaiveDate, NaiveTime};
@@ -459,6 +462,13 @@ mod tests {
             "camera-id-3",
             &requested_cameras
         ));
+    }
+
+    #[test]
+    fn skips_existing_files_unless_force_is_enabled() {
+        assert!(should_skip_existing_file(true, false));
+        assert!(!should_skip_existing_file(true, true));
+        assert!(!should_skip_existing_file(false, false));
     }
 
     #[test]

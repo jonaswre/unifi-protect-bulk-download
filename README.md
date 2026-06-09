@@ -26,6 +26,7 @@ Options:
 - `--hours <START-END>` limits each day to an end-exclusive hour window, for example `--hours 07-19` downloads from 07:00 up to, but not including, 19:00 each day.
 - `--timelapse-factor <FACTOR>` sets the timelapse speed factor. Supported values are `60x`, `120x`, `300x`, and `600x`. The default is `60x`.
 - `--timelapse-duration <DURATION>` targets a fixed output duration for each timelapse export, for example `--timelapse-duration 5m`. Supported units are `s`, `m`, and `h`. This overrides `--timelapse-factor`.
+- `--force` overwrites existing output files. Without this flag, existing files are skipped.
 
 
 # Example
