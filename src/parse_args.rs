@@ -39,6 +39,12 @@ pub struct DownloadArgs {
     pub start_date: String,
     /// The end date/time to download files to (YYYY-MM-DD or YYYY-MM-DD-HH).
     pub end_date: String,
+    /// Optional daily hour window to download (START-END, end-exclusive, e.g. 07-19).
+    #[arg(long, value_name = "START-END")]
+    pub hours: Option<String>,
+    /// Timelapse speed factor. Matches UniFi Protect UI options.
+    #[arg(long, value_enum, default_value = "60x")]
+    pub timelapse_factor: TimelapseFactor,
     /// Comma-separated list of camera names/ids, or `all` / `*`.
     #[arg(value_delimiter = ',')]
     pub cameras: Vec<String>,
@@ -61,6 +67,29 @@ impl RecordingType {
         match self {
             Self::Rotating => "rotating",
             Self::Timelapse => "timelapse",
+        }
+    }
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+pub enum TimelapseFactor {
+    #[value(name = "60x")]
+    X60,
+    #[value(name = "120x")]
+    X120,
+    #[value(name = "300x")]
+    X300,
+    #[value(name = "600x")]
+    X600,
+}
+
+impl TimelapseFactor {
+    pub fn as_fps(&self) -> u32 {
+        match self {
+            Self::X60 => 4,
+            Self::X120 => 8,
+            Self::X300 => 20,
+            Self::X600 => 40,
         }
     }
 }

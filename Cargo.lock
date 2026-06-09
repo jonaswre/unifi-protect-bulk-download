@@ -1543,8 +1543,6 @@ dependencies = [
 [[package]]
 name = "unifi_protect"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "392eb759498883375ceadf5576a3bb408a39265823799664396ef2abeab8bee8"
 dependencies = [
  "reqwest",
  "serde",

@@ -22,6 +22,10 @@ Arguments:
 - \<end_date>        The end date/time to download files to (YYYY-MM-DD or YYYY-MM-DD-HH)
 - \[cameras]         Optional comma-separated list of camera names or camera ids to download. Omit it, use `all`, or use `*` to download every camera.
 
+Options:
+- `--hours <START-END>` limits each day to an end-exclusive hour window, for example `--hours 07-19` downloads from 07:00 up to, but not including, 19:00 each day.
+- `--timelapse-factor <FACTOR>` sets the timelapse speed factor. Supported values are `60x`, `120x`, `300x`, and `600x`. The default is `60x`.
+
 
 # Example
 For example, to download all footage from your Unifi-Protect NVR, for all cameras, for the months of June and July 2023, run the following command:
@@ -41,6 +45,11 @@ In the above example, replace:
 To download only selected cameras, append a comma-separated list of camera names or ids:
 ```bash
 download https://<Unifi-Protect-IP-Addr> <username> <password> /path/to/destination/folder daily rotating 2023-06-01 2023-07-31 "Front Door,Garage"
+```
+
+To download timelapse footage only during daytime hours each day:
+```bash
+download https://<Unifi-Protect-IP-Addr> <username> <password> /path/to/destination/folder hourly timelapse 2023-06-01 2023-07-31 --hours 07-19 --timelapse-factor 300x "Front Door"
 ```
 
 To download only specific hours (for example daylight hours), specify the start and end date/time in the format __YYYY-MM-DD-HH__ (for example __2023-06-01-08__).

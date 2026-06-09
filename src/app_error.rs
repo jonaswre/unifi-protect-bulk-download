@@ -23,6 +23,10 @@ pub enum AppError {
     InvalidMode {
         mode: String,
     },
+    InvalidHourWindow {
+        input: String,
+        reason: String,
+    },
     Api {
         context: String,
         source: String,
@@ -57,6 +61,9 @@ impl fmt::Display for AppError {
             }
             AppError::DateOverflow { context } => write!(f, "date arithmetic failed: {}", context),
             AppError::InvalidMode { mode } => write!(f, "invalid download mode '{}'", mode),
+            AppError::InvalidHourWindow { input, reason } => {
+                write!(f, "invalid hour window '{}': {}", input, reason)
+            }
             AppError::Api { context, source } => write!(f, "{}: {}", context, source),
         }
     }

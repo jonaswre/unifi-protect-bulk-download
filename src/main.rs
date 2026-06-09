@@ -1,6 +1,6 @@
 use crate::app_error::{api_error, to_local, AppError};
-use crate::parse_args::{parse_args, Commands, DownloadArgs, DownloadMode};
-use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, Timelike};
+use crate::parse_args::{parse_args, Commands, DownloadArgs, DownloadMode, RecordingType};
+use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use std::path::{Path, PathBuf};
 use unifi_protect::*;
 
@@ -35,6 +35,7 @@ async fn download(args: &DownloadArgs) -> Result<(), AppError> {
     }
 
     let cameras = args.cameras.clone();
+    let hour_window = args.hours.as_deref().map(parse_hour_window).transpose()?;
 
     println!("Cameras to Download: {:?}", cameras);
 
@@ -66,74 +67,20 @@ async fn download(args: &DownloadArgs) -> Result<(), AppError> {
         );
     }
 
-    // Calculate time frames
-    let mut time_frames: Vec<(DateTime<Local>, DateTime<Local>)> = vec![];
-    if matches!(args.mode, DownloadMode::Hourly) {
-        let mut cursor = start_date;
-        while cursor <= end_date {
-            let hour_start = cursor
-                .date()
-                .and_hms_opt(cursor.time().hour(), 0, 0)
-                .ok_or_else(|| AppError::DateConstruction {
-                    context: format!("failed to build hour start from '{}'", cursor),
-                })?;
-            let hour_end = hour_start + Duration::hours(1) - Duration::seconds(1);
-
-            let frame_start = if hour_start < start_date {
-                start_date
-            } else {
-                hour_start
-            };
-            let frame_end = if hour_end > end_date {
-                end_date
-            } else {
-                hour_end
-            };
-
-            time_frames.push((
-                to_local(frame_start, "hourly frame start".to_string())?,
-                to_local(frame_end, "hourly frame end".to_string())?,
-            ));
-            cursor = hour_start + Duration::hours(1);
-        }
-    } else if matches!(args.mode, DownloadMode::Daily) {
-        let mut date = start_date.date();
-        while date <= end_date.date() {
-            let day_start =
-                date.and_hms_opt(0, 0, 0)
-                    .ok_or_else(|| AppError::DateConstruction {
-                        context: format!("failed to build day start from '{}'", date),
-                    })?;
-            let day_end =
-                date.and_hms_opt(23, 59, 59)
-                    .ok_or_else(|| AppError::DateConstruction {
-                        context: format!("failed to build day end from '{}'", date),
-                    })?;
-
-            let frame_start = if day_start < start_date {
-                start_date
-            } else {
-                day_start
-            };
-            let frame_end = if day_end > end_date {
-                end_date
-            } else {
-                day_end
-            };
-
-            time_frames.push((
-                to_local(frame_start, "daily frame start".to_string())?,
-                to_local(frame_end, "daily frame end".to_string())?,
-            ));
-            date = date.succ_opt().ok_or_else(|| AppError::DateOverflow {
-                context: format!("failed to calculate next day after '{}'", date),
-            })?;
-        }
+    let time_frames = build_time_frames(&args.mode, start_date, end_date, hour_window)?
+        .into_iter()
+        .map(|(frame_start, frame_end)| {
+            Ok((
+                to_local(frame_start, "frame start".to_string())?,
+                to_local(frame_end, "frame end".to_string())?,
+            ))
+        })
+        .collect::<Result<Vec<(DateTime<Local>, DateTime<Local>)>, AppError>>()?;
+    let timelapse_fps = if matches!(args.recording_type, RecordingType::Timelapse) {
+        Some(args.timelapse_factor.as_fps())
     } else {
-        return Err(AppError::InvalidMode {
-            mode: format!("{:?}", args.mode),
-        });
-    }
+        None
+    };
 
     println!("Downloading videos...");
     for time_frame in time_frames {
@@ -178,10 +125,11 @@ async fn download(args: &DownloadArgs) -> Result<(), AppError> {
                 file_path_display
             );
             if !server
-                .download_footage(
+                .download_footage_with_fps(
                     camera,
                     &file_path_lossy,
                     args.recording_type.as_str(),
+                    timelapse_fps,
                     time_frame.0.timestamp_millis(),
                     time_frame.1.timestamp_millis(),
                 )
@@ -209,6 +157,117 @@ async fn download(args: &DownloadArgs) -> Result<(), AppError> {
         }
     }
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct HourWindow {
+    start: NaiveTime,
+    end: NaiveTime,
+}
+
+fn parse_hour_window(input: &str) -> Result<HourWindow, AppError> {
+    let (start, end) = input
+        .split_once('-')
+        .ok_or_else(|| AppError::InvalidHourWindow {
+            input: input.to_string(),
+            reason: "expected START-END, for example 07-19".to_string(),
+        })?;
+    let start = parse_hour_component(input, start)?;
+    let end = parse_hour_component(input, end)?;
+
+    if end <= start {
+        return Err(AppError::InvalidHourWindow {
+            input: input.to_string(),
+            reason: "end must be after start".to_string(),
+        });
+    }
+
+    Ok(HourWindow { start, end })
+}
+
+fn parse_hour_component(window: &str, component: &str) -> Result<NaiveTime, AppError> {
+    let component = component.trim();
+    let hour = component
+        .parse::<u32>()
+        .map_err(|_| AppError::InvalidHourWindow {
+            input: window.to_string(),
+            reason: format!("'{}' is not an hour from 00 to 23", component),
+        })?;
+
+    NaiveTime::from_hms_opt(hour, 0, 0).ok_or_else(|| AppError::InvalidHourWindow {
+        input: window.to_string(),
+        reason: format!("'{}' is not an hour from 00 to 23", component),
+    })
+}
+
+fn build_time_frames(
+    mode: &DownloadMode,
+    start_date: NaiveDateTime,
+    end_date: NaiveDateTime,
+    hour_window: Option<HourWindow>,
+) -> Result<Vec<(NaiveDateTime, NaiveDateTime)>, AppError> {
+    let mut time_frames = vec![];
+
+    if matches!(mode, DownloadMode::Hourly) {
+        let mut cursor = start_date;
+        while cursor <= end_date {
+            let hour_start = cursor
+                .date()
+                .and_hms_opt(cursor.time().hour(), 0, 0)
+                .ok_or_else(|| AppError::DateConstruction {
+                    context: format!("failed to build hour start from '{}'", cursor),
+                })?;
+
+            if let Some(window) = hour_window {
+                let hour = hour_start.time();
+                if hour < window.start || hour >= window.end {
+                    cursor = hour_start + Duration::hours(1);
+                    continue;
+                }
+            }
+
+            let hour_end = hour_start + Duration::hours(1) - Duration::seconds(1);
+            time_frames.push((start_date.max(hour_start), end_date.min(hour_end)));
+            cursor = hour_start + Duration::hours(1);
+        }
+    } else if matches!(mode, DownloadMode::Daily) {
+        let mut date = start_date.date();
+        while date <= end_date.date() {
+            let (day_start, day_end) = if let Some(window) = hour_window {
+                (
+                    date.and_time(window.start),
+                    date.and_time(window.end) - Duration::seconds(1),
+                )
+            } else {
+                (
+                    date.and_hms_opt(0, 0, 0)
+                        .ok_or_else(|| AppError::DateConstruction {
+                            context: format!("failed to build day start from '{}'", date),
+                        })?,
+                    date.and_hms_opt(23, 59, 59)
+                        .ok_or_else(|| AppError::DateConstruction {
+                            context: format!("failed to build day end from '{}'", date),
+                        })?,
+                )
+            };
+
+            let frame_start = start_date.max(day_start);
+            let frame_end = end_date.min(day_end);
+            if frame_start <= frame_end {
+                time_frames.push((frame_start, frame_end));
+            }
+
+            date = date.succ_opt().ok_or_else(|| AppError::DateOverflow {
+                context: format!("failed to calculate next day after '{}'", date),
+            })?;
+        }
+    } else {
+        return Err(AppError::InvalidMode {
+            mode: format!("{:?}", mode),
+        });
+    }
+
+    Ok(time_frames)
 }
 
 fn should_download_camera(
@@ -260,7 +319,9 @@ fn parse_date_or_hour(
 
 #[cfg(test)]
 mod tests {
-    use super::should_download_camera;
+    use super::{build_time_frames, parse_hour_window, should_download_camera, HourWindow};
+    use crate::parse_args::DownloadMode;
+    use chrono::{NaiveDate, NaiveTime};
 
     #[test]
     fn selects_all_cameras_when_no_filter_is_provided() {
@@ -306,5 +367,98 @@ mod tests {
             "camera-id-3",
             &requested_cameras
         ));
+    }
+
+    #[test]
+    fn parses_end_exclusive_hour_window() {
+        let window = parse_hour_window("07-19").expect("valid hour window");
+
+        assert_eq!(window.start, NaiveTime::from_hms_opt(7, 0, 0).unwrap());
+        assert_eq!(window.end, NaiveTime::from_hms_opt(19, 0, 0).unwrap());
+    }
+
+    #[test]
+    fn rejects_hour_windows_where_end_is_not_after_start() {
+        assert!(parse_hour_window("19-07").is_err());
+        assert!(parse_hour_window("07-07").is_err());
+    }
+
+    #[test]
+    fn builds_hourly_frames_only_inside_daily_hour_window() {
+        let start = NaiveDate::from_ymd_opt(2026, 5, 5)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let end = NaiveDate::from_ymd_opt(2026, 5, 6)
+            .unwrap()
+            .and_hms_opt(23, 59, 59)
+            .unwrap();
+        let window = HourWindow {
+            start: NaiveTime::from_hms_opt(7, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(19, 0, 0).unwrap(),
+        };
+
+        let frames = build_time_frames(&DownloadMode::Hourly, start, end, Some(window)).unwrap();
+
+        assert_eq!(frames.len(), 24);
+        assert_eq!(
+            frames.first().unwrap().0,
+            start.date().and_hms_opt(7, 0, 0).unwrap()
+        );
+        assert_eq!(
+            frames.first().unwrap().1,
+            start.date().and_hms_opt(7, 59, 59).unwrap()
+        );
+        assert_eq!(
+            frames.last().unwrap().0,
+            NaiveDate::from_ymd_opt(2026, 5, 6)
+                .unwrap()
+                .and_hms_opt(18, 0, 0)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn builds_daily_frames_clipped_to_hour_window_and_outer_range() {
+        let start = NaiveDate::from_ymd_opt(2026, 5, 5)
+            .unwrap()
+            .and_hms_opt(16, 0, 0)
+            .unwrap();
+        let end = NaiveDate::from_ymd_opt(2026, 5, 6)
+            .unwrap()
+            .and_hms_opt(10, 0, 0)
+            .unwrap();
+        let window = HourWindow {
+            start: NaiveTime::from_hms_opt(7, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(19, 0, 0).unwrap(),
+        };
+
+        let frames = build_time_frames(&DownloadMode::Daily, start, end, Some(window)).unwrap();
+
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].0, start);
+        assert_eq!(
+            frames[0].1,
+            NaiveDate::from_ymd_opt(2026, 5, 5)
+                .unwrap()
+                .and_hms_opt(18, 59, 59)
+                .unwrap()
+        );
+        assert_eq!(
+            frames[1].0,
+            NaiveDate::from_ymd_opt(2026, 5, 6)
+                .unwrap()
+                .and_hms_opt(7, 0, 0)
+                .unwrap()
+        );
+        assert_eq!(frames[1].1, end);
+    }
+
+    #[test]
+    fn maps_timelapse_factor_to_export_fps() {
+        assert_eq!(crate::parse_args::TimelapseFactor::X60.as_fps(), 4);
+        assert_eq!(crate::parse_args::TimelapseFactor::X120.as_fps(), 8);
+        assert_eq!(crate::parse_args::TimelapseFactor::X300.as_fps(), 20);
+        assert_eq!(crate::parse_args::TimelapseFactor::X600.as_fps(), 40);
     }
 }

@@ -1,6 +1,7 @@
 FROM rust:latest
 
 COPY src/* ./src/
+COPY vendor ./vendor/
 COPY Cargo.lock .
 COPY Cargo.toml .
 COPY rust-toolchain.toml .
